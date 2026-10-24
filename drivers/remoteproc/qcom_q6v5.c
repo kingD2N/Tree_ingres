@@ -23,10 +23,14 @@
 #include <linux/workqueue.h>
 
 #include "qcom_common.h"
+#include <linux/seq_file.h>
+#include <linux/proc_fs.h>
 #include "qcom_q6v5.h"
 #include <trace/events/rproc_qcom.h>
 
 #define Q6V5_PANIC_DELAY_MS	200
+#define MAX_SSR_REASON_LEN	256U
+#define MAX_CRASH_REASON    256
 #define MAX_FW_FILE_SIZE (4 * 1024)
 #define NAME_LEN 64
 #define LINE_LEN 128
@@ -42,6 +46,56 @@ struct symbol_entry {
 
 static struct rb_root symbol_tree = RB_ROOT;
 #endif
+
+static int crash_num = 0;
+static bool ramdump_state = false;
+static char last_modem_sfr_reason[MAX_SSR_REASON_LEN] = "none";
+static struct proc_dir_entry *last_modem_sfr_entry = NULL;
+static struct proc_dir_entry *ramdump_state_sfr_entry = NULL;
+static char modem_crash_reason[MAX_CRASH_REASON][MAX_SSR_REASON_LEN]={"0"};
+
+/* modem crash history entry */
+static int last_modem_sfr_proc_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "%s\n", last_modem_sfr_reason);
+	return 0;
+}
+
+static int last_modem_sfr_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, last_modem_sfr_proc_show, NULL);
+}
+
+static const struct proc_ops last_modem_sfr_file_ops = {
+	//.owner   = THIS_MODULE,
+	.proc_open    = last_modem_sfr_proc_open,
+	.proc_read    = seq_read,
+	.proc_lseek   = seq_lseek,
+	.proc_release = single_release,
+};
+
+/* ramdump state entry */
+static int ramdump_state_proc_clear(struct seq_file *m, void *v)
+{
+	ramdump_state = true;
+	pr_err("ramdump state change\n");
+	seq_printf(m, "%s\n", "null");
+	return 0;
+}
+
+static int ramdump_state_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, ramdump_state_proc_clear, NULL);
+}
+
+static const struct proc_ops ramdump_state_file_ops = {
+	//.owner   = THIS_MODULE,
+	.proc_open    = ramdump_state_proc_open,
+	.proc_read    = seq_read,
+	.proc_lseek   = seq_lseek,
+	.proc_release = single_release,
+};
+
 /**
  * qcom_q6v5_prepare() - reinitialize the qcom_q6v5 context before start
  * @q6v5:	reference to qcom_q6v5 context to be reinitialized
@@ -50,6 +104,18 @@ static struct rb_root symbol_tree = RB_ROOT;
  */
 int qcom_q6v5_prepare(struct qcom_q6v5 *q6v5)
 {
+	if (last_modem_sfr_entry == NULL) {
+		last_modem_sfr_entry = proc_create("last_mcrash", S_IFREG | S_IRUGO, NULL, &last_modem_sfr_file_ops);
+	}
+	if (!last_modem_sfr_entry) {
+		printk(KERN_ERR "pil: cannot create proc entry last_mcrash\n");
+	}
+	if (ramdump_state_sfr_entry == NULL) {
+		ramdump_state_sfr_entry = proc_create("ramdump_state", S_IFREG | S_IRUGO | S_IWUGO, NULL, &ramdump_state_file_ops);
+	}
+	if (!ramdump_state_sfr_entry) {
+		printk(KERN_ERR "pil: cannot create proc entry ramdump_state\n");
+	}
 	reinit_completion(&q6v5->start_done);
 	reinit_completion(&q6v5->stop_done);
 
@@ -287,6 +353,7 @@ static irqreturn_t q6v5_wdog_interrupt(int irq, void *data)
 	struct qcom_rproc_ssr *ssr;
 	size_t len;
 	char *msg;
+	int temp_num;
 
 	/* Sometimes the stop triggers a watchdog rather than a stop-ack */
 	if (!q6v5->running) {
@@ -296,13 +363,38 @@ static irqreturn_t q6v5_wdog_interrupt(int irq, void *data)
 	}
 
 	msg = qcom_smem_get(QCOM_SMEM_HOST_ANY, q6v5->crash_reason, &len);
-	if (!IS_ERR(msg) && len > 0 && msg[0])
+	if (!IS_ERR(msg) && len > 0 && msg[0]) {
 		dev_err(q6v5->dev, "watchdog received: %s\n", msg);
-	else
+		dev_err(q6v5->dev, "subsystem failure reason: %s. \n", msg);
+        strlcpy(last_modem_sfr_reason, msg, MAX_SSR_REASON_LEN);
+		if (ramdump_state)
+			strlcpy(modem_crash_reason[crash_num++], msg, MAX_SSR_REASON_LEN);
+	} else {
 		dev_err(q6v5->dev, "watchdog without message\n");
+		dev_err(q6v5->dev, "subsystem failure reason: watchdog without message. \n");
+		//strlcpy(last_modem_sfr_reason, msg, MAX_SSR_REASON_LEN);
+	}
 
 	q6v5->running = false;
-	trace_rproc_qcom_event(dev_name(q6v5->dev), "q6v5_wdog", msg);
+	temp_num = crash_num - 1;
+	while ((temp_num--) && crash_num && (crash_num >= 10))
+	{
+		if (!strcmp(modem_crash_reason[crash_num-1], modem_crash_reason[temp_num]))
+		{
+			crash_num = crash_num - 1;
+			q6v5->rproc->dump_conf = RPROC_COREDUMP_DISABLED;
+			pr_err("qcom_q6v5.c :in compare, same crash reason to skip dump");
+			break;
+		} else if (!temp_num){
+			q6v5->rproc->dump_conf = RPROC_COREDUMP_ENABLED;
+			break;
+		}
+	}
+
+	if (!IS_ERR(msg) && len > 0 && msg[0])
+		trace_rproc_qcom_event(dev_name(q6v5->dev), "q6v5_wdog", msg);
+	else
+		trace_rproc_qcom_event(dev_name(q6v5->dev), "q6v5_wdog", "");
 	if (q6v5->rproc->recovery_disabled) {
 		schedule_work(&q6v5->crash_handler);
 	} else {
@@ -324,6 +416,7 @@ static irqreturn_t q6v5_fatal_interrupt(int irq, void *data)
 	struct qcom_rproc_ssr *ssr;
 	size_t len;
 	char *msg;
+	int temp_num;
 
 	if (!q6v5->running) {
 		dev_info(q6v5->dev, "received fatal irq while q6 is offline\n");
@@ -331,10 +424,17 @@ static irqreturn_t q6v5_fatal_interrupt(int irq, void *data)
 	}
 
 	msg = qcom_smem_get(QCOM_SMEM_HOST_ANY, q6v5->crash_reason, &len);
-	if (!IS_ERR(msg) && len > 0 && msg[0])
+	if (!IS_ERR(msg) && len > 0 && msg[0]) {
 		dev_err(q6v5->dev, "fatal error received: %s\n", msg);
-	else
+		dev_err(q6v5->dev, "subsystem failure reason: %s. \n", msg);
+        strlcpy(last_modem_sfr_reason, msg, MAX_SSR_REASON_LEN);
+		if (ramdump_state)
+			strlcpy(modem_crash_reason[crash_num++], msg, MAX_SSR_REASON_LEN);
+	} else {
 		dev_err(q6v5->dev, "fatal error without message\n");
+		dev_err(q6v5->dev, "subsystem failure reason: fatal error without message. \n");
+		//strlcpy(last_modem_sfr_reason, msg, MAX_SSR_REASON_LEN);
+	}
 
 #ifdef CONFIG_QCOM_CRASH_SYMBOL_MATCH
 	if (queue_work(system_freezable_wq, &q6v5->symbol_loader)) {
@@ -345,7 +445,24 @@ static irqreturn_t q6v5_fatal_interrupt(int irq, void *data)
 	}
 #endif
 	q6v5->running = false;
-	trace_rproc_qcom_event(dev_name(q6v5->dev), "q6v5_fatal", msg);
+	temp_num = crash_num - 1;
+	while ((temp_num--) && crash_num && (crash_num >= 10))
+	{
+		if (!strcmp(modem_crash_reason[crash_num-1], modem_crash_reason[temp_num]))
+		{
+			crash_num = crash_num - 1;
+			q6v5->rproc->dump_conf = RPROC_COREDUMP_DISABLED;
+			pr_err("qcom_q6v5.c :in compare, same crash reason to skip dump");
+			break;
+		} else if (!temp_num){
+			q6v5->rproc->dump_conf = RPROC_COREDUMP_ENABLED;
+			break;
+		}
+	}
+	if (!IS_ERR(msg) && len > 0 && msg[0])
+		trace_rproc_qcom_event(dev_name(q6v5->dev), "q6v5_fatal", msg);
+	else
+		trace_rproc_qcom_event(dev_name(q6v5->dev), "q6v5_fatal", "");
 	if (q6v5->rproc->recovery_disabled) {
 		schedule_work(&q6v5->crash_handler);
 	} else {
@@ -425,6 +542,14 @@ int qcom_q6v5_request_stop(struct qcom_q6v5 *q6v5, struct qcom_sysmon *sysmon)
 {
 	int ret;
 
+	if (last_modem_sfr_entry) {
+		remove_proc_entry("last_mcrash", NULL);
+		last_modem_sfr_entry = NULL;
+	}
+	if (ramdump_state_sfr_entry) {
+		remove_proc_entry("ramdump_state", NULL);
+		ramdump_state_sfr_entry = NULL;
+	}
 	q6v5->running = false;
 
 	/* Don't perform SMP2P dance if sysmon already shut
@@ -477,7 +602,19 @@ int qcom_q6v5_init(struct qcom_q6v5 *q6v5, struct platform_device *pdev,
 		   void (*handover)(struct qcom_q6v5 *q6v5))
 {
 	int ret;
+	if (last_modem_sfr_entry == NULL) {
+		last_modem_sfr_entry = proc_create("last_mcrash", S_IFREG | S_IRUGO, NULL, &last_modem_sfr_file_ops);
+	}
+	if (!last_modem_sfr_entry) {
+		printk(KERN_ERR "pil: cannot create proc entry last_mcrash\n");
+	}
 
+	if (ramdump_state_sfr_entry == NULL) {
+		ramdump_state_sfr_entry = proc_create("ramdump_state", S_IFREG | S_IRUGO | S_IWUGO, NULL, &ramdump_state_file_ops);
+	}
+	if (!ramdump_state_sfr_entry) {
+		printk(KERN_ERR "pil: cannot create proc entry ramdump_state\n");
+	}
 	q6v5->rproc = rproc;
 	q6v5->dev = &pdev->dev;
 	q6v5->crash_reason = crash_reason;

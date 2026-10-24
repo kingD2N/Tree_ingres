@@ -857,6 +857,10 @@ static int fuse_try_move_page(struct fuse_copy_state *cs, struct page **pagep)
 	if (WARN_ON(PageMlocked(oldpage)))
 		goto out_fallback_unlock;
 
+	err = lock_request(cs->req);
+	if (err)
+		goto out_fallback_unlock;
+
 	err = replace_page_cache_page(oldpage, newpage, GFP_KERNEL);
 	if (err) {
 		unlock_page(newpage);
@@ -874,20 +878,7 @@ static int fuse_try_move_page(struct fuse_copy_state *cs, struct page **pagep)
 	 */
 	pipe_buf_release(cs->pipe, buf);
 
-	err = 0;
-	spin_lock(&cs->req->waitq.lock);
-	if (test_bit(FR_ABORTED, &cs->req->flags))
-		err = -ENOENT;
-	else
-		*pagep = newpage;
-	spin_unlock(&cs->req->waitq.lock);
-
-	if (err) {
-		unlock_page(newpage);
-		put_page(newpage);
-		goto out_put_old;
-	}
-
+	*pagep = newpage;
 	unlock_page(oldpage);
 	/* Drop ref for ap->pages[] array */
 	put_page(oldpage);
@@ -1962,14 +1953,9 @@ static ssize_t fuse_dev_do_write(struct fuse_dev *fud,
 	if (!err && req->in.h.opcode == FUSE_CANONICAL_PATH) {
 		char *path = (char *)req->args->out_args[0].value;
 
-		if (req->args->out_args[0].size == 0) {
-			req->out.h.error = -EBADMSG;
-		} else {
-			/* NUL-terminate inside the page; size<=PATH_MAX by construction */
-			path[min_t(unsigned int, req->args->out_args[0].size, PATH_MAX) - 1] = 0;
-			req->out.h.error =
-				kern_path(path, 0, req->args->canonical_path);
-		}
+		path[req->args->out_args[0].size - 1] = 0;
+		req->out.h.error =
+			kern_path(path, 0, req->args->canonical_path);
 	}
 
 	spin_lock(&fpq->lock);

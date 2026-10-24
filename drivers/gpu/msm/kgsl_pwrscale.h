@@ -55,10 +55,6 @@ struct kgsl_pwrscale {
 	struct workqueue_struct *devfreq_wq;
 	struct work_struct devfreq_suspend_ws;
 	struct work_struct devfreq_resume_ws;
-	/** @devfreq_notify_worker: kthread worker to handle devfreq notify event */
-	struct kthread_worker *devfreq_notify_worker;
-	/** @devfreq_notify_work: work struct to update devfreq as per request */
-	struct kthread_work devfreq_notify_work;
 	ktime_t next_governor_call;
 	struct thermal_cooling_device *cooling_dev;
 	bool ctxt_aware_enable;
@@ -70,6 +66,10 @@ struct kgsl_pwrscale {
 	struct devfreq *bus_devfreq;
 	/** @devfreq_enabled: Whether or not devfreq is enabled */
 	bool devfreq_enabled;
+	/** @devfreq_notify_worker: kthread worker to handle devfreq notify event */
+	struct kthread_worker *devfreq_notify_worker;
+	/** @devfreq_notify_work: work struct to update devfreq as per request */
+	struct kthread_work devfreq_notify_work;
 };
 
 /**

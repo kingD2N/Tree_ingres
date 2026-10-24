@@ -2363,10 +2363,6 @@ static int fsg_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 static void fsg_disable(struct usb_function *f)
 {
 	struct fsg_dev *fsg = fsg_from_func(f);
-	struct fsg_common *common = fsg->common;
-
-	do_set_interface(fsg->common, NULL);
-	wait_event(common->fsg_wait, common->fsg != fsg);
 
 	/* Disable the endpoints */
 	if (fsg->bulk_in_enabled) {
@@ -2901,7 +2897,7 @@ EXPORT_SYMBOL_GPL(fsg_common_create_lun);
 
 int fsg_common_create_luns(struct fsg_common *common, struct fsg_config *cfg)
 {
-	char buf[8]; /* enough for 100000000 different numbers, decimal */
+	char buf[14];
 	int i, rc;
 
 	fsg_common_remove_luns(common);

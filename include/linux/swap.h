@@ -374,6 +374,11 @@ extern unsigned long try_to_free_mem_cgroup_pages(struct mem_cgroup *memcg,
 						  unsigned long nr_pages,
 						  gfp_t gfp_mask,
 						  bool may_swap);
+extern unsigned long try_to_free_mem_cgroup_pages_proactive(
+						  struct mem_cgroup *memcg,
+						  unsigned long nr_pages,
+						  gfp_t gfp_mask,
+						  bool may_swap);
 extern unsigned long mem_cgroup_shrink_node(struct mem_cgroup *mem,
 						gfp_t gfp_mask, bool noswap,
 						pg_data_t *pgdat,
@@ -412,6 +417,8 @@ int add_swap_extent(struct swap_info_struct *sis, unsigned long start_page,
 		unsigned long nr_pages, sector_t start_block);
 int generic_swapfile_activate(struct swap_info_struct *, struct file *,
 		sector_t *);
+
+int kcompressd(void *p);
 
 /* linux/mm/swap_state.c */
 /* One swap address space for each 64M swap space */
@@ -651,6 +658,11 @@ static inline swp_entry_t get_swap_page(struct page *page)
 	swp_entry_t entry;
 	entry.val = 0;
 	return entry;
+}
+
+static inline int kcompressd(void *p)
+{
+	return 0;
 }
 
 #endif /* CONFIG_SWAP */

@@ -12,51 +12,13 @@
 #include "main.h"
 #include "qmi.h"
 #include "genl.h"
+#if IS_ENABLED(CONFIG_MI_HARDWARE_ID)
 #include "hwid.h"
+#endif
 
 #define WLFW_SERVICE_INS_ID_V01		1
 #define WLFW_CLIENT_ID			0x4b4e454c
 #define BDF_FILE_NAME_PREFIX		"bdwlan"
-#define ELF_BDF_FILE_NAME_L2S		"bd_l2s.elf"
-#define ELF_BDF_FILE_NAME_L2S_GF	"bd_l2sgf.elf"
-#define ELF_BDF_FILE_NAME_L3S		"bd_l3s.elf"
-#define ELF_BDF_FILE_NAME_L3S_GF	"bd_l3sgf.elf"
-#define ELF_BDF_FILE_NAME_L1		"bd_l1.elf"
-#define ELF_BDF_FILE_NAME_L1_GF		"bd_l1gf.elf"
-#define ELF_BDF_FILE_NAME_L2		"bd_l2.elf"
-#define ELF_BDF_FILE_NAME_L2_GF		"bd_l2gf.elf"
-#define ELF_BDF_FILE_NAME_L2_GLOBAL	"bd_l2gl.elf"
-#define ELF_BDF_FILE_NAME_L2_GF_GLOBAL	"bd_l2gfgl.elf"
-#define ELF_BDF_FILE_NAME_L3		"bd_l3.elf"
-#define ELF_BDF_FILE_NAME_L3_GF		"bd_l3gf.elf"
-#define ELF_BDF_FILE_NAME_L3_GLOBAL	"bd_l3gl.elf"
-#define ELF_BDF_FILE_NAME_L3_GF_GLOBAL	"bd_l3gfgl.elf"
-#define ELF_BDF_FILE_NAME_L10		"bd_l10.elf"
-#define ELF_BDF_FILE_NAME_L10_GF	"bd_l10gf.elf"
-#define ELF_BDF_FILE_NAME_L10_GLOBAL	"bd_l10gl.elf"
-#define ELF_BDF_FILE_NAME_L10_GF_GLOBAL	"bd_l10gfgl.elf"
-#define ELF_BDF_FILE_NAME_L12		"bd_l12.elf"
-#define ELF_BDF_FILE_NAME_L12_GF	"bd_l12gf.elf"
-#define ELF_BDF_FILE_NAME_L12_GLOBAL	"bd_l12gl.elf"
-#define ELF_BDF_FILE_NAME_L12_GF_GLOBAL	"bd_l12gfgl.elf"
-#define ELF_BDF_FILE_NAME_L12_JAPAN	"bd_l12jp.elf"
-#define ELF_BDF_FILE_NAME_L12_GF_JAPAN	"bd_l12gfjp.elf"
-#define ELF_BDF_FILE_NAME_L18		"bd_l18.elf"
-#define ELF_BDF_FILE_NAME_L18_GF	"bd_l18gf.elf"
-#define ELF_BDF_FILE_NAME_M11A		"bd_m11a.elf"
-#define ELF_BDF_FILE_NAME_M11A_GF	"bd_m11agf.elf"
-#define ELF_BDF_FILE_NAME_M11A_GLOBAL	"bd_m11agl.elf"
-#define ELF_BDF_FILE_NAME_M11A_GF_GLOBAL "bd_m11agfgl.elf"
-#define ELF_BDF_FILE_NAME_M11A_INDIA	"bd_m11ain.elf"
-#define ELF_BDF_FILE_NAME_M11A_GF_INDIA	"bd_m11agfin.elf"
-#define ELF_BDF_FILE_NAME_M16T		"bd_m16t.elf"
-#define ELF_BDF_FILE_NAME_M16T_GF	"bd_m16tgf.elf"
-#define ELF_BDF_FILE_NAME_M16T_GF_GLOBAL	"bd_m16tgfgl.elf"
-#define ELF_BDF_FILE_NAME_M16T_GLOBAL	"bd_m16tgl.elf"
-#define ELF_BDF_FILE_NAME_M16T_INDIA	"bd_m16tin.elf"
-#define ELF_BDF_FILE_NAME_M16T_GF_INDIA	"bd_m16tgfin.elf"
-#define ELF_BDF_FILE_NAME_M80           "bd_m80.elf"
-#define ELF_BDF_FILE_NAME_M80_GF        "bd_m80gf.elf"
 #define ELF_BDF_FILE_NAME		"bdwlan.elf"
 #define ELF_BDF_FILE_NAME_GF		"bdwlang.elf"
 #define ELF_BDF_FILE_NAME_PREFIX	"bdwlan.e"
@@ -66,7 +28,6 @@
 #define BIN_BDF_FILE_NAME_PREFIX	"bdwlan.b"
 #define BIN_BDF_FILE_NAME_GF_PREFIX	"bdwlang.b"
 #define REGDB_FILE_NAME			"regdb.bin"
-#define REGDB_FILE_NAME_XIAOMI		"regdb_xiaomi.bin"
 #define HDS_FILE_NAME			"hds.bin"
 #define CHIP_ID_GF_MASK			0x10
 
@@ -292,6 +253,30 @@ static int cnss_wlfw_host_cap_send_sync(struct cnss_plat_data *plat_priv)
 		cnss_pr_dbg("WAKE MSI base data is %d\n", req->wake_msi);
 		req->wake_msi_valid = 1;
 	}
+
+#ifdef CONFIG_WIFI_THREE_ANTENNA
+	req->gpios_valid = 1;
+	/* Format of GPIO configuration -
+	*
+	* A_UINT32 default_output_val:1, - GPIO default Output value if direction is output
+	* reserved1:7, - reserved bits
+	* sw_func:4, - GPIO pin software function selection
+	* pull:2, - GPIO Pull, TLMM_GPIO_CFGn.GPIO_PULL
+	* func:4, - GPIO pin function, TLMM_GPIO_CFGn.FUNC_SEL
+	* drive:3, - GPIO Drive, TLMM_GPIO_CFGn.DRV_STRENGTH
+	* dir:1, - GPIO pin direction: PLAT_GPIO_DIR_INPUT/PLAT_GPIO_DIR_OUTPUT,
+	* TLMM_GPIO_CFGn.GPIO_OE
+	* reserved0:2, - reserved bits
+	* gpio_num:8; - GPIO pin number
+	*/
+	/* 1st GPIO,set default GPIO config*/
+	req->gpios[0] = 0x38242F01;
+
+	/* The Nth GPIO if any, and update req->gpios_len accordingly
+	* Ensure gpios_len less than QMI_WLFW_MAX_NUM_GPIO_V01
+	*/
+	req->gpios_len = 1;
+#endif
 
 	req->bdf_support_valid = 1;
 	req->bdf_support = 1;
@@ -657,156 +642,46 @@ static int cnss_get_bdf_file_name(struct cnss_plat_data *plat_priv,
 {
 	char filename_tmp[MAX_FIRMWARE_NAME_LEN];
 	int ret = 0;
-	uint32_t hw_platform_ver = 0;
+#if IS_ENABLED(CONFIG_MI_HARDWARE_ID)
 	uint32_t hw_country_ver = 0;
 	hw_country_ver = get_hw_country_version();
-	hw_platform_ver = get_hw_version_platform();
+#endif
 
 	switch (bdf_type) {
 	case CNSS_BDF_ELF:
 		/* Board ID will be equal or less than 0xFF in GF mask case */
 		if (plat_priv->board_info.board_id == 0xFF) {
 			if (plat_priv->chip_info.chip_id & CHIP_ID_GF_MASK) {
-				if (hw_platform_ver == HARDWARE_PROJECT_L1 ||
-				    hw_platform_ver == HARDWARE_PROJECT_L1A) {
-						snprintf(filename_tmp, filename_len,
-							ELF_BDF_FILE_NAME_L1_GF);
-				} else if (hw_platform_ver == HARDWARE_PROJECT_L2S) {
-						snprintf(filename_tmp, filename_len,
-							ELF_BDF_FILE_NAME_L2S_GF);
-				} else if (hw_platform_ver == HARDWARE_PROJECT_L3S) {
-						snprintf(filename_tmp, filename_len,
-							ELF_BDF_FILE_NAME_L3S_GF);
-				} else if (hw_platform_ver == HARDWARE_PROJECT_L2) {
-					if ((uint32_t)CountryGlobal == hw_country_ver)
-						snprintf(filename_tmp, filename_len,
-							ELF_BDF_FILE_NAME_L2_GF_GLOBAL);
-					else
-						snprintf(filename_tmp, filename_len,
-							ELF_BDF_FILE_NAME_L2_GF);
-				} else if (hw_platform_ver == HARDWARE_PROJECT_L3) {
-					if ((uint32_t)CountryGlobal == hw_country_ver)
-						snprintf(filename_tmp, filename_len,
-							ELF_BDF_FILE_NAME_L3_GF_GLOBAL);
-					else
-						snprintf(filename_tmp, filename_len,
-							ELF_BDF_FILE_NAME_L3_GF);
-				} else if (hw_platform_ver == HARDWARE_PROJECT_L10) {
-					if ((uint32_t)CountryGlobal == hw_country_ver)
-						snprintf(filename_tmp, filename_len,
-							ELF_BDF_FILE_NAME_L10_GF_GLOBAL);
-					else
-						snprintf(filename_tmp, filename_len,
-							ELF_BDF_FILE_NAME_L10_GF);
-				} else if (hw_platform_ver == HARDWARE_PROJECT_L12) {
-					if ((uint32_t)CountryGlobal == hw_country_ver)
-						snprintf(filename_tmp, filename_len,
-							ELF_BDF_FILE_NAME_L12_GF_GLOBAL);
-					else if ((uint32_t)CountryJapan == hw_country_ver)
-						snprintf(filename_tmp, filename_len,
-							ELF_BDF_FILE_NAME_L12_GF_JAPAN);
-					else
-						snprintf(filename_tmp, filename_len,
-							ELF_BDF_FILE_NAME_L12_GF);
-				} else if (hw_platform_ver == HARDWARE_PROJECT_L18) {
-						snprintf(filename_tmp, filename_len,
-							ELF_BDF_FILE_NAME_L18_GF);
-				} else if (hw_platform_ver == HARDWARE_PROJECT_M11A) {
-					if ((uint32_t)CountryGlobal == hw_country_ver)
-						snprintf(filename_tmp, filename_len,
-							ELF_BDF_FILE_NAME_M11A_GF_GLOBAL);
-					else if ((uint32_t)CountryIndia == hw_country_ver)
-						snprintf(filename_tmp, filename_len,
-							ELF_BDF_FILE_NAME_M11A_GF_INDIA);
-					else
-						snprintf(filename_tmp, filename_len,
-							ELF_BDF_FILE_NAME_M11A_GF);
-				} else if (hw_platform_ver == HARDWARE_PROJECT_M16T) {
-					if ((uint32_t)CountryGlobal == hw_country_ver)
-						snprintf(filename_tmp, filename_len,
-							ELF_BDF_FILE_NAME_M16T_GF_GLOBAL);
-					else if ((uint32_t)CountryIndia == hw_country_ver)
-						snprintf(filename_tmp, filename_len,
-							ELF_BDF_FILE_NAME_M16T_GF_INDIA);
-					else
-						snprintf(filename_tmp, filename_len,
-							ELF_BDF_FILE_NAME_M16T_GF);
-				} else if (hw_platform_ver == HARDWARE_PROJECT_M80) {
-						snprintf(filename_tmp, filename_len,
-							ELF_BDF_FILE_NAME_M80_GF);
-				} else
+#if IS_ENABLED(CONFIG_MI_HARDWARE_ID) && IS_ENABLED(CONFIG_MACH_XIAOMI_MARBLE)
+				if (hw_country_ver == (uint32_t)CountryIndia)
 					snprintf(filename_tmp, filename_len,
-						ELF_BDF_FILE_NAME_GF);
-			} else if (hw_platform_ver == HARDWARE_PROJECT_L1 ||
-			           hw_platform_ver == HARDWARE_PROJECT_L1A) {
+						"bd_m16tgfin.elf");
+				else if (hw_country_ver == (uint32_t)CountryGlobal)
 					snprintf(filename_tmp, filename_len,
-						ELF_BDF_FILE_NAME_L1);
-			} else if (hw_platform_ver == HARDWARE_PROJECT_L2S) {
-					snprintf(filename_tmp, filename_len,
-						ELF_BDF_FILE_NAME_L2S);
-			} else if (hw_platform_ver == HARDWARE_PROJECT_L3S) {
-					snprintf(filename_tmp, filename_len,
-						ELF_BDF_FILE_NAME_L3S);
-			} else if (hw_platform_ver == HARDWARE_PROJECT_L2) {
-				if ((uint32_t)CountryGlobal == hw_country_ver)
-					snprintf(filename_tmp, filename_len,
-						ELF_BDF_FILE_NAME_L2_GLOBAL);
+						"bd_m16tgfgl.elf");
 				else
 					snprintf(filename_tmp, filename_len,
-						ELF_BDF_FILE_NAME_L2);
-			} else if (hw_platform_ver == HARDWARE_PROJECT_L3) {
-				if ((uint32_t)CountryGlobal == hw_country_ver)
+						"bd_m16tgf.elf");
+#else
+				snprintf(filename_tmp, filename_len,
+					 ELF_BDF_FILE_NAME_GF);
+#endif
+			} else {
+#if IS_ENABLED(CONFIG_MI_HARDWARE_ID) && IS_ENABLED(CONFIG_MACH_XIAOMI_MARBLE)
+				if (hw_country_ver == (uint32_t)CountryIndia)
 					snprintf(filename_tmp, filename_len,
-						ELF_BDF_FILE_NAME_L3_GLOBAL);
+						"bd_m16tin.elf");
+				else if (hw_country_ver == (uint32_t)CountryGlobal)
+					snprintf(filename_tmp, filename_len,
+						"bd_m16tgl.elf");
 				else
 					snprintf(filename_tmp, filename_len,
-						ELF_BDF_FILE_NAME_L3);
-			} else if (hw_platform_ver == HARDWARE_PROJECT_L10) {
-				if ((uint32_t)CountryGlobal == hw_country_ver)
-					snprintf(filename_tmp, filename_len,
-						ELF_BDF_FILE_NAME_L10_GLOBAL);
-				else
-					snprintf(filename_tmp, filename_len,
-						ELF_BDF_FILE_NAME_L10);
-			} else if (hw_platform_ver == HARDWARE_PROJECT_L12) {
-				if ((uint32_t)CountryGlobal == hw_country_ver)
-					snprintf(filename_tmp, filename_len,
-						ELF_BDF_FILE_NAME_L12_GLOBAL);
-				else if ((uint32_t)CountryJapan == hw_country_ver)
-					snprintf(filename_tmp, filename_len,
-						ELF_BDF_FILE_NAME_L12_JAPAN);
-				else
-					snprintf(filename_tmp, filename_len,
-						ELF_BDF_FILE_NAME_L12);
-			} else if (hw_platform_ver == HARDWARE_PROJECT_L18) {
-					snprintf(filename_tmp, filename_len,
-						ELF_BDF_FILE_NAME_L18);
-			} else if (hw_platform_ver == HARDWARE_PROJECT_M11A) {
-				if ((uint32_t)CountryGlobal == hw_country_ver)
-					snprintf(filename_tmp, filename_len,
-						ELF_BDF_FILE_NAME_M11A_GLOBAL);
-				else if ((uint32_t)CountryIndia == hw_country_ver)
-					snprintf(filename_tmp, filename_len,
-						ELF_BDF_FILE_NAME_M11A_INDIA);
-				else
-					snprintf(filename_tmp, filename_len,
-						ELF_BDF_FILE_NAME_M11A);
-			} else if (hw_platform_ver == HARDWARE_PROJECT_M16T) {
-				if ((uint32_t)CountryGlobal == hw_country_ver)
-					snprintf(filename_tmp, filename_len,
-						ELF_BDF_FILE_NAME_M16T_GLOBAL);
-				else if ((uint32_t)CountryIndia == hw_country_ver)
-					snprintf(filename_tmp, filename_len,
-						ELF_BDF_FILE_NAME_M16T_INDIA);
-				else
-					snprintf(filename_tmp, filename_len,
-						ELF_BDF_FILE_NAME_M16T);
-			} else if (hw_platform_ver == HARDWARE_PROJECT_M80) {
-					snprintf(filename_tmp, filename_len,
-						ELF_BDF_FILE_NAME_M80);
-			} else
+						"bd_m16t.elf");
+#else
 				snprintf(filename_tmp, filename_len,
 					 ELF_BDF_FILE_NAME);
+#endif
+			}
 		} else if (plat_priv->board_info.board_id < 0xFF) {
 			if (plat_priv->chip_info.chip_id & CHIP_ID_GF_MASK)
 				snprintf(filename_tmp, filename_len,
@@ -848,7 +723,11 @@ static int cnss_get_bdf_file_name(struct cnss_plat_data *plat_priv,
 		}
 		break;
 	case CNSS_BDF_REGDB:
-		snprintf(filename_tmp, filename_len, REGDB_FILE_NAME_XIAOMI);
+#if IS_ENABLED(CONFIG_MI_HARDWARE_ID) && IS_ENABLED(CONFIG_MACH_XIAOMI_MARBLE)
+		snprintf(filename_tmp, filename_len, "regdb_xiaomi.bin");
+#else
+		snprintf(filename_tmp, filename_len, REGDB_FILE_NAME);
+#endif
 		break;
 	case CNSS_BDF_HDS:
 		snprintf(filename_tmp, filename_len, HDS_FILE_NAME);
@@ -3456,15 +3335,15 @@ int cnss_qmi_get_dms_mac(struct cnss_plat_data *plat_priv)
 	}
 
 	if (resp.resp.result != QMI_RESULT_SUCCESS_V01) {
-                if (resp.resp.error == DMS_MAC_NOT_PROVISIONED) {
-                        cnss_pr_err("NV MAC address is not provisioned");
-                        plat_priv->dms.nv_mac_not_prov = 1;
-                        ret = -resp.resp.result;
-                } else {
-                        cnss_pr_err("QMI_DMS_GET_MAC_ADDRESS_REQ_V01 failed, result: %d, err: %d\n",
-                                    resp.resp.result, resp.resp.error);
-                        ret = -EAGAIN;
-                }
+		if (resp.resp.error == DMS_MAC_NOT_PROVISIONED) {
+			cnss_pr_err("NV MAC address is not provisioned");
+			plat_priv->dms.nv_mac_not_prov = 1;
+			ret = -resp.resp.result;
+		} else {
+			cnss_pr_err("QMI_DMS_GET_MAC_ADDRESS_REQ_V01 failed, result: %d, err: %d\n",
+				    resp.resp.result, resp.resp.error);
+			ret = -EAGAIN;
+		}
 		goto out;
 	}
 	if (!resp.mac_address_valid ||

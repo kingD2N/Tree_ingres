@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0
 VERSION = 5
 PATCHLEVEL = 10
-SUBLEVEL = 269
+SUBLEVEL = 272
 EXTRAVERSION =
 NAME = Dare mighty things
 
@@ -432,12 +432,14 @@ HOST_LFS_CFLAGS := $(shell getconf LFS_CFLAGS 2>/dev/null)
 HOST_LFS_LDFLAGS := $(shell getconf LFS_LDFLAGS 2>/dev/null)
 HOST_LFS_LIBS := $(shell getconf LFS_LIBS 2>/dev/null)
 
+CCACHE := $(shell which ccache)
+
 ifneq ($(LLVM),)
-HOSTCC	= clang
-HOSTCXX	= clang++
+HOSTCC	= $(CCACHE) clang
+HOSTCXX	= $(CCACHE) clang++
 else
-HOSTCC	= gcc
-HOSTCXX	= g++
+HOSTCC	= $(CCACHE) gcc
+HOSTCXX	= $(CCACHE) g++
 endif
 
 KBUILD_USERHOSTCFLAGS := -Wall -Wmissing-prototypes -Wstrict-prototypes \
@@ -453,7 +455,7 @@ KBUILD_HOSTLDLIBS   := $(HOST_LFS_LIBS) $(HOSTLDLIBS)
 # Make variables (CC, etc...)
 CPP		= $(CC) -E
 ifneq ($(LLVM),)
-CC		= clang
+CC		= $(CCACHE) clang
 LD		= ld.lld
 AR		= llvm-ar
 NM		= llvm-nm
@@ -462,7 +464,7 @@ OBJDUMP		= llvm-objdump
 READELF		= llvm-readelf
 STRIP		= llvm-strip
 else
-CC		= $(CROSS_COMPILE)gcc
+CC		= $(CCACHE) $(CROSS_COMPILE)gcc
 LD		= $(CROSS_COMPILE)ld
 AR		= $(CROSS_COMPILE)ar
 NM		= $(CROSS_COMPILE)nm
@@ -537,7 +539,7 @@ CLANG_FLAGS :=
 # For use when analysis needs to call subshell with CC before cc-wrapper is built.
 NO_WRAPPER_CC := $(CC)
 
-CC := scripts/basic/cc-wrapper $(CC)
+# CC := scripts/basic/cc-wrapper $(CC)
 
 export ARCH SRCARCH CONFIG_SHELL BASH HOSTCC KBUILD_HOSTCFLAGS CROSS_COMPILE LD CC
 export CPP AR NM STRIP OBJCOPY OBJDUMP READELF PAHOLE RESOLVE_BTFIDS LEX YACC AWK INSTALLKERNEL
@@ -599,8 +601,7 @@ endif
 # Some architectures define CROSS_COMPILE in arch/$(SRCARCH)/Makefile.
 # CC_VERSION_TEXT is referenced from Kconfig (so it needs export),
 # and from include/config/auto.conf.cmd to detect the compiler upgrade.
-# cc-wrapper may not yet be compiled, use NO_WRAPPER_CC.
-CC_VERSION_TEXT = $(subst $(pound),,$(shell LC_ALL=C $(NO_WRAPPER_CC) --version 2>/dev/null | head -n 1))
+CC_VERSION_TEXT = $(subst $(pound),,$(shell LC_ALL=C $(CC) --version 2>/dev/null | head -n 1))
 
 ifneq ($(findstring clang,$(CC_VERSION_TEXT)),)
 include $(srctree)/scripts/Makefile.clang
@@ -776,6 +777,35 @@ else ifdef CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3
 KBUILD_CFLAGS += -O3
 else ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
 KBUILD_CFLAGS += -Os
+endif
+
+ifdef CONFIG_LLVM_POLLY
+KBUILD_CFLAGS	+= -mllvm -polly \
+		   -mllvm -polly-run-inliner \
+		   -mllvm -polly-ast-use-context \
+		   -mllvm -polly-detect-keep-going \
+		   -mllvm -polly-invariant-load-hoisting \
+		   -mllvm -polly-vectorizer=stripmine
+
+ifeq ($(shell test $(CONFIG_CLANG_VERSION) -gt 130000; echo $$?),0)
+KBUILD_CFLAGS	+= -mllvm -polly-loopfusion-greedy=1 \
+		   -mllvm -polly-reschedule=1 \
+		   -mllvm -polly-postopts=1 \
+		   -mllvm -polly-num-threads=0 \
+		   -mllvm -polly-omp-backend=LLVM \
+		   -mllvm -polly-scheduling=dynamic \
+		   -mllvm -polly-scheduling-chunksize=1
+else
+KBUILD_CFLAGS	+= -mllvm -polly-opt-fusion=max
+endif
+
+# Polly may optimise loops with dead paths beyound what the linker
+# can understand. This may negate the effect of the linker's DCE
+# so we tell Polly to perfom proven DCE on the loops it optimises
+# in order to preserve the overall effect of the linker's DCE.
+ifdef CONFIG_LD_DEAD_CODE_DATA_ELIMINATION
+POLLY_FLAGS	+= -mllvm -polly-run-dce
+endif
 endif
 
 # Tell gcc to never replace conditional load with a non-conditional one
@@ -1233,10 +1263,6 @@ PHONY += headers
 techpack-dirs := $(shell find $(srctree)/techpack -maxdepth 1 -mindepth 1 -type d -not -name ".*")
 techpack-dirs := $(subst $(srctree)/,,$(techpack-dirs))
 
-ext-mod-dir := ../sm8450-modules
-ext-mod-dirs := $(ext-mod-dir)/qcom/opensource/audio-kernel $(ext-mod-dir)/qcom/opensource/display-drivers $(ext-mod-dir)/qcom/opensource/video-kernel
-ext-mod-dirs := $(subst $(srctree)/,,$(ext-mod-dirs))
-
 #Default location for installed headers
 ifeq ($(KBUILD_EXTMOD),)
 PHONY += archheaders archscripts
@@ -1267,9 +1293,6 @@ endif
 	$(Q)$(MAKE) $(hdr-inst)=$(hdr-prefix)include/uapi
 	$(Q)$(MAKE) $(hdr-inst)=$(hdr-prefix)arch/$(SRCARCH)/include/uapi
 	$(Q)for d in $(techpack-dirs); do \
-		$(MAKE) $(hdr-inst)=$$d/include/uapi; \
-	done
-	$(Q)for d in $(ext-mod-dirs); do \
 		$(MAKE) $(hdr-inst)=$$d/include/uapi; \
 	done
 

@@ -12,8 +12,13 @@
 #include <linux/arm-smccc.h>
 #include <linux/dma-mapping.h>
 #include <linux/qtee_shmbridge.h>
+#include <linux/wait.h>
 
 #include "qcom_scm.h"
+
+//Mi-Security Add
+DECLARE_WAIT_QUEUE_HEAD(tzdbg_log_wq);
+EXPORT_SYMBOL(tzdbg_log_wq);
 
 /**
  * struct arm_smccc_args
@@ -58,7 +63,7 @@ static void __scm_smc_do_quirk(const struct arm_smccc_args *smc,
 
 static void fill_wq_resume_args(struct arm_smccc_args *resume, u32 smc_call_ctx)
 {
-	memset(resume->args, 0, ARRAY_SIZE(resume->args));
+	memset(resume->args, 0, sizeof(resume->args));
 
 	resume->args[0] = ARM_SMCCC_CALL_VAL(ARM_SMCCC_STD_CALL,
 			 ARM_SMCCC_SMC_64, ARM_SMCCC_OWNER_SIP,
@@ -71,7 +76,7 @@ static void fill_wq_resume_args(struct arm_smccc_args *resume, u32 smc_call_ctx)
 
 static void fill_wq_wake_ack_args(struct arm_smccc_args *wake_ack, u32 smc_call_ctx)
 {
-	memset(wake_ack->args, 0, ARRAY_SIZE(wake_ack->args));
+	memset(wake_ack->args, 0, sizeof(wake_ack->args));
 
 	wake_ack->args[0] = ARM_SMCCC_CALL_VAL(ARM_SMCCC_STD_CALL,
 			 ARM_SMCCC_SMC_64, ARM_SMCCC_OWNER_SIP,
@@ -84,7 +89,7 @@ static void fill_wq_wake_ack_args(struct arm_smccc_args *wake_ack, u32 smc_call_
 
 static void fill_get_wq_ctx_args(struct arm_smccc_args *get_wq_ctx)
 {
-	memset(get_wq_ctx->args, 0, ARRAY_SIZE(get_wq_ctx->args));
+	memset(get_wq_ctx->args, 0, sizeof(get_wq_ctx->args));
 
 	get_wq_ctx->args[0] = ARM_SMCCC_CALL_VAL(ARM_SMCCC_STD_CALL,
 			 ARM_SMCCC_SMC_64, ARM_SMCCC_OWNER_SIP,
@@ -288,6 +293,7 @@ int __scm_smc_call(struct device *dev, const struct qcom_scm_desc *desc,
 	}
 
 	ret = (long)smc_res.a0 ? qcom_scm_remap_error(smc_res.a0) : 0;
+	wake_up_interruptible(&tzdbg_log_wq);
 
 	return ret;
 }

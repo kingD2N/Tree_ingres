@@ -1,14 +1,13 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2002,2007-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #ifndef __KGSL_DEVICE_H
 #define __KGSL_DEVICE_H
 
 #include <linux/sched/mm.h>
 #include <linux/sched/task.h>
-#include <trace/events/gpu_mem.h>
 
 #include "kgsl.h"
 #include "kgsl_drawobj.h"
@@ -239,8 +238,6 @@ struct kgsl_device {
 	uint32_t requested_state;
 
 	atomic_t active_cnt;
-	/** @total_mapped: To trace overall gpu memory usage */
-	atomic64_t total_mapped;
 
 	wait_queue_head_t active_cnt_wq;
 	struct platform_device *pdev;
@@ -465,6 +462,7 @@ struct kgsl_context {
  * @priv: Internal flags, use KGSL_PROCESS_* values
  * @pid: Identification structure for the task owner of the process
  * @comm: task name of the process
+ * @mm: mm_struct of the opening process, used to prevent other mm mmap
  * @mem_lock: Spinlock to protect the process memory lists
  * @refcount: kref object for reference counting the process
  * @idr: Iterator for assigning IDs to memory allocations
@@ -484,6 +482,7 @@ struct kgsl_process_private {
 	unsigned long priv;
 	struct pid *pid;
 	char comm[TASK_COMM_LEN];
+	struct mm_struct *mm;
 	spinlock_t mem_lock;
 	struct kref refcount;
 	struct idr mem_idr;
@@ -1071,26 +1070,6 @@ int kgsl_add_fault(struct kgsl_context *context, u32 type, void *priv);
  * @context: Pointer to the KGSL context
  */
 void kgsl_free_faults(struct kgsl_context *context);
-
-/**
- * kgsl_trace_gpu_mem_total - Overall gpu memory usage tracking which includes
- * process allocations, imported dmabufs and kgsl globals
- * @device: A KGSL device handle
- * @delta: delta of total mapped memory size
- */
-#ifdef CONFIG_TRACE_GPU_MEM
-static inline void kgsl_trace_gpu_mem_total(struct kgsl_device *device,
-						s64 delta)
-{
-	u64 total_size;
-
-	total_size = atomic64_add_return(delta, &device->total_mapped);
-	trace_gpu_mem_total(0, 0, total_size);
-}
-#else
-static inline void kgsl_trace_gpu_mem_total(struct kgsl_device *device,
-						s64 delta) {}
-#endif
 
 /*
  * kgsl_context_is_lpac() - Checks if context is LPAC

@@ -2494,7 +2494,7 @@ static void __dwc3_gadget_set_speed(struct dwc3 *dwc)
 	dwc3_writel(dwc->regs, DWC3_DCFG, reg);
 }
 
-static int dwc3_gadget_run_stop(struct dwc3 *dwc, int is_on, int suspend)
+int dwc3_gadget_run_stop(struct dwc3 *dwc, int is_on, int suspend)
 {
 	u32			reg;
 	u32			timeout = 2000;
@@ -2577,7 +2577,7 @@ static int dwc3_gadget_run_stop(struct dwc3 *dwc, int is_on, int suspend)
 
 static void dwc3_gadget_disable_irq(struct dwc3 *dwc);
 static void __dwc3_gadget_stop(struct dwc3 *dwc);
-static int __dwc3_gadget_start(struct dwc3 *dwc);
+int __dwc3_gadget_start(struct dwc3 *dwc);
 
 static int dwc3_gadget_soft_disconnect(struct dwc3 *dwc)
 {
@@ -2646,7 +2646,7 @@ static int dwc3_gadget_soft_disconnect(struct dwc3 *dwc)
 	return ret;
 }
 
-static int dwc3_gadget_pullup(struct usb_gadget *g, int is_on)
+int dwc3_gadget_pullup(struct usb_gadget *g, int is_on)
 {
 	struct dwc3		*dwc = gadget_to_dwc(g);
 	struct dwc3_vendor	*vdwc = container_of(dwc, struct dwc3_vendor, dwc);
@@ -2663,8 +2663,10 @@ static int dwc3_gadget_pullup(struct usb_gadget *g, int is_on)
 	 */
 	if (!is_on) {
 		pm_runtime_barrier(dwc->dev);
-		if (pm_runtime_suspended(dwc->dev))
+		if (pm_runtime_suspended(dwc->dev)) {
+			dev_err(dwc->dev, "Gadget disconnected do not resume\n");
 			return 0;
+		}
 	}
 
 	/*
@@ -2690,22 +2692,10 @@ static int dwc3_gadget_pullup(struct usb_gadget *g, int is_on)
 	if (!is_on) {
 		ret = dwc3_gadget_soft_disconnect(dwc);
 	} else {
-		/*
-		 * In the Synopsys DWC_usb31 1.90a programming guide section
-		 * 4.1.9, it specifies that for a reconnect after a
-		 * device-initiated disconnect requires a core soft reset
-		 * (DCTL.CSftRst) before enabling the run/stop bit.
-		 */
-		ret = dwc3_core_soft_reset(dwc);
-		if (ret)
-			goto done;
-
-		dwc3_event_buffers_setup(dwc);
 		__dwc3_gadget_start(dwc);
 		ret = dwc3_gadget_run_stop(dwc, true, false);
 	}
 
-done:
 	pm_runtime_put(dwc->dev);
 
 	return ret;
@@ -2784,7 +2774,7 @@ static void dwc3_gadget_setup_nump(struct dwc3 *dwc)
 	dwc3_writel(dwc->regs, DWC3_DCFG, reg);
 }
 
-static int __dwc3_gadget_start(struct dwc3 *dwc)
+int __dwc3_gadget_start(struct dwc3 *dwc)
 {
 	struct dwc3_ep		*dep;
 	int			ret = 0;
@@ -3925,7 +3915,7 @@ static void dwc3_gadget_disconnect_interrupt(struct dwc3 *dwc)
 	dwc3_ep0_reset_state(dwc);
 }
 
-static void dwc3_gadget_reset_interrupt(struct dwc3 *dwc)
+void dwc3_gadget_reset_interrupt(struct dwc3 *dwc)
 {
 	u32			reg;
 
@@ -3999,7 +3989,7 @@ static void dwc3_gadget_reset_interrupt(struct dwc3 *dwc)
 	dwc3_writel(dwc->regs, DWC3_DCFG, reg);
 }
 
-static void dwc3_gadget_conndone_interrupt(struct dwc3 *dwc)
+void dwc3_gadget_conndone_interrupt(struct dwc3 *dwc)
 {
 	struct dwc3_ep		*dep;
 	int			ret;
@@ -4325,12 +4315,6 @@ static void dwc3_gadget_interrupt(struct dwc3 *dwc,
 		dwc3_gadget_linksts_change_interrupt(dwc, event->event_info);
 		break;
 	case DWC3_DEVICE_EVENT_SUSPEND:
-#ifdef CONFIG_FACTORY_BUILD
-		if (dwc->gadget.state >= USB_STATE_CONFIGURED){
-			pr_info("Do not active the suspend irq under factory build version\n");
-			break;
-		}
-#endif
 		/* It changed to be suspend event for version 2.30a and above */
 		if (!DWC3_VER_IS_PRIOR(DWC3, 230A))
 			dwc3_gadget_suspend_interrupt(dwc, event->event_info);

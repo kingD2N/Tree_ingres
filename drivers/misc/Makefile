@@ -67,6 +67,7 @@ obj-$(CONFIG_QSEECOM)		+= qseecom-mod.o
 qseecom-mod-$(CONFIG_QSEECOM)  := qseecom.o
 qseecom-mod-$(CONFIG_COMPAT)	+= compat_qseecom.o
 obj-$(CONFIG_WIGIG_SENSING_SPI)	+= wigig_sensing.o
+obj-$(CONFIG_NTSYNC)		+= ntsync.o
 obj-$(CONFIG_KINECTICS_XR_NORDIC) += kxrctrl/
 obj-y				+= hwid/
 wl2866d_ldo-y			+= wl2866d.o

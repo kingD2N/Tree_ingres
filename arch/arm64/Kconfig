@@ -190,6 +190,8 @@ config ARM64
 	select HAVE_STACKPROTECTOR
 	select HAVE_SYSCALL_TRACEPOINTS
 	select HAVE_KPROBES
+	select HAVE_OPTPROBES
+	select HAVE_KPROBES_ON_FTRACE
 	select HAVE_KRETPROBES
 	select HAVE_GENERIC_VDSO
 	select IOMMU_DMA if IOMMU_SUPPORT
@@ -2049,8 +2051,9 @@ config CC_HAVE_STACKPROTECTOR_SYSREG
 	def_bool $(cc-option,-mstack-protector-guard=sysreg -mstack-protector-guard-reg=sp_el0 -mstack-protector-guard-offset=0)
 
 config STACKPROTECTOR_PER_TASK
-	def_bool y
+	bool "Stack Protector per task"
 	depends on STACKPROTECTOR && CC_HAVE_STACKPROTECTOR_SYSREG
+	default y
 
 endmenu
 
@@ -2220,3 +2223,23 @@ source "arch/arm64/gunyah/Kconfig"
 if CRYPTO
 source "arch/arm64/crypto/Kconfig"
 endif
+
+menu "Xiaomi configuration options"
+
+config MACH_XIAOMI
+        bool "Xiaomi board"
+        depends on ARCH_QCOM
+        help
+          Support for Xiaomi boards.
+
+menu "Xiaomi board selection"
+
+config MACH_XIAOMI_MARBLE
+        bool "marble board"
+        select MACH_XIAOMI
+        help
+          Support for Redmi Note 12 Turbo / Poco F5, codenamed marble / marblein.
+
+endmenu
+
+endmenu

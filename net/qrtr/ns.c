@@ -267,6 +267,7 @@ static int announce_servers(struct sockaddr_qrtr *sq)
 			return ret;
 		}
 	}
+
 	return 0;
 }
 
@@ -527,6 +528,7 @@ static int ctrl_cmd_del_client(struct sockaddr_qrtr *from,
 					   srv->service, srv->instance,
 					   srv->port, ret);
 	}
+
 	return 0;
 }
 

@@ -358,7 +358,6 @@ static const struct reg_offset_data bam_v1_7_reg_info[] = {
 		pr_debug(msg, ##args); \
 } while (0)
 #else
-#define DMA_IPC_LOGPAGES 0
 #define DMA_BAM_DBG(dev, msg, args...)             pr_debug(msg, ##args)
 #endif
 
@@ -1507,6 +1506,7 @@ static int bam_dma_remove(struct platform_device *pdev)
 	if (bdev->ipc_log_dma)
 		ipc_log_context_destroy(bdev->ipc_log_dma);
 
+	pm_runtime_dont_use_autosuspend(&pdev->dev);
 	pm_runtime_force_suspend(&pdev->dev);
 
 	of_dma_controller_free(pdev->dev.of_node);
